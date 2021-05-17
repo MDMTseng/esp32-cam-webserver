@@ -2,7 +2,8 @@
  * primary HTML for the OV2640 camera module
  */
 
-const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
+const uint8_t index_ov2640_html[] = R"=====(
+<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -66,6 +67,21 @@ const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
                   <option value="0">THUMB (96x96)</option>
                 </select>
               </div>
+                <label for="ResN">ResN</label>
+                <input type="button" id="ResN_Info"  value="ResN_Info">
+                <br/>
+                <input type="number" id="ResN_mode" min="6" max="10" value="1">
+                <br/>
+                <input type="number" id="ResN_offset_x" min="6" max="1600" value="0">
+                <input type="number" id="ResN_offset_y" min="6" max="1600" value="0">
+                <br/>
+                <input type="number" id="ResN_max_x" min="6" max="1600" value="800">
+                <input type="number" id="ResN_max_y" min="6" max="1600" value="600">
+                <br/>
+                <input type="number" id="ResN_w" min="6" max="1600" value="800">
+                <input type="number" id="ResN_h" min="6" max="1600" value="600">
+
+
               <div class="input-group" id="quality-group">
                 <label for="quality">Quality</label>
                 <div class="range-min">Low<br><span style="font-size: 80%;">(fast)</span></div>
@@ -324,6 +340,24 @@ const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
     const clearPrefsButton = document.getElementById('clear_prefs')
     const rebootButton = document.getElementById('reboot')
 
+
+
+
+    {
+      let id="ResN_Info"
+      const ResN_go_dom = document.getElementById('ResN_Info');
+
+      ResN_go_dom.onclick = () => {
+        let resN_dom_eles=
+          ['ResN_mode','ResN_offset_x','ResN_offset_y','ResN_max_x','ResN_max_y'  ,'ResN_w','ResN_h']
+          .map(id=>document.getElementById(id).value)
+          .reduce((acc,v)=>acc+(acc.length>0?",":"")+v,"");
+        console.log(resN_dom_eles);
+        
+        updateConfig({type:"string" ,id:"ResN_Info",value:resN_dom_eles})
+      }
+    }
+
     const hide = el => {
       el.classList.add('hidden')
     }
@@ -340,7 +374,6 @@ const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
       el.classList.remove('disabled')
       el.disabled = false
     }
-
     const updateValue = (el, value, updateRemote) => {
       updateRemote = updateRemote == null ? true : updateRemote
       let initialValue
@@ -417,6 +450,14 @@ const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
         case 'submit':
           value = '1'
           break
+
+        case 'json':
+          value = JSON.stringify(el.value)
+          break
+        case 'string':
+          value = el.value
+          break
+
         default:
           return
       }
@@ -649,6 +690,29 @@ const uint8_t index_ov2640_html[] = R"=====(<!doctype html>
 
   })
   </script>
-</html>)=====";
+</html>
+)=====";
 
 size_t index_ov2640_html_len = sizeof(index_ov2640_html)-1;
+
+
+
+
+    // {
+    //   let id="ResN_Info"
+    //   const ResN_go_dom = document.getElementById('ResN_Info');
+
+    //   ResN_go_dom.onclick = () => {
+    //     let idArr
+    //     let resN_dom_eles=
+    //       ['ResN_mode','ResN_offset_x','ResN_offset_y','ResN_max_x','ResN_max_y'  ,'ResN_w','ResN_h']
+    //       .reduce((obj,id)=>{
+    //         obj[id]=document.getElementById(id).value;
+    //         return obj;
+
+    //       },{})
+    //     console.log(resN_dom_eles);
+        
+    //     updateConfig({type:"string" ,id:"ResN_Info",value:JSON.stringify(resN_dom_eles)})
+    //   }
+    // }

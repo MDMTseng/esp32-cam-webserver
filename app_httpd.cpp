@@ -324,13 +324,18 @@ static esp_err_t capture_handler(httpd_req_t *req){
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
 
+#define LAMP_PIN 4
     Serial.println("Capture Requested");
     if (autoLamp && (lampVal != -1)) setLamp(lampVal);
     flashLED(75); // little flash of status LED
 
     int64_t fr_start = esp_timer_get_time();
-
+    
+//    pinMode(LAMP_PIN, OUTPUT);
+//    digitalWrite(LAMP_PIN, HIGH);
     fb = esp_camera_fb_get();
+//    delay(1000);
+//    digitalWrite(LAMP_PIN, LOW);
     if (!fb) {
         Serial.println("CAPTURE: failed to acquire frame");
         httpd_resp_send_500(req);
@@ -484,6 +489,12 @@ static esp_err_t stream_handler(httpd_req_t *req){
                 } else {
                     _jpg_buf_len = fb->len;
                     _jpg_buf = fb->buf;
+
+                    // image_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
+                    // fmt2rgb888(fb->buf, fb->len, fb->format, image_matrix->item);
+
+
+                    // dl_matrix3du_free(image_matrix);
                 }
             } else {
 
@@ -588,6 +599,45 @@ static esp_err_t stream_handler(httpd_req_t *req){
     return res;
 }
 
+static int parseStringNumArr2Int32Arr(char *str, uint32_t *int_arr,size_t int_arr_L)
+{
+  int intL=0;
+  int numL=0;
+  uint32_t pnum=0;
+  
+  for(int i=0;;i++)
+  {
+    char ch=str[i];
+    if(ch<'0' || ch>'9')
+    {
+      if(numL)
+      {
+        int_arr[intL]=pnum;
+        intL++;
+        if(intL==int_arr_L)
+        {
+          break;
+        }
+        numL=0;
+      }
+      pnum=0;
+
+      if(ch=='\0')
+      {
+        break;
+      }
+      continue;
+    }
+    ch-='0';
+    pnum*=10;
+    pnum+=ch;
+    numL++;
+  }
+
+  return intL;
+}
+
+
 static esp_err_t cmd_handler(httpd_req_t *req){
     char*  buf;
     size_t buf_len;
@@ -625,7 +675,53 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     sensor_t * s = esp_camera_sensor_get();
     int res = 0;
     if(!strcmp(variable, "framesize")) {
-        if(s->pixformat == PIXFORMAT_JPEG) res = s->set_framesize(s, (framesize_t)val);
+        if(s->pixformat == PIXFORMAT_JPEG)
+        {
+
+          res = s->set_framesize(s, (framesize_t)val);
+        
+        }
+        
+    }
+
+    else if(!strcmp(variable, "ResN_Info")) {
+        if(s->pixformat == PIXFORMAT_JPEG)
+        {
+          // res = s->set_framesize(s, (framesize_t)val);
+
+          // va/lue
+          uint32_t int32arr[10];
+          int len=parseStringNumArr2Int32Arr(value,int32arr,sizeof(int32arr)/sizeof(int32arr[0]));
+
+
+          Serial.print("arrL:");
+          Serial.println(len);
+          for(int i = 0; i < len; i++)
+          {
+            Serial.print(int32arr[i]);
+            Serial.print(",");
+          }
+          Serial.println();
+          res=0;
+
+          if(len>=7)
+          {
+            int mode =int32arr[0];
+            // int fullW=1600>>mode;
+            // int fullH=1200>>mode;
+            // int cropX=1;
+            int offset_x=int32arr[1];
+            int offset_y=int32arr[2];
+            int max_x=int32arr[3];
+            int max_y=int32arr[4];
+            int w=int32arr[5];
+            int h=int32arr[6];
+
+            
+            res = s->set_res_raw(s, mode, 0, 0, 0,   offset_x, offset_y, max_x, max_y, w, h, false, true);
+
+          }
+        }
     }
     else if(!strcmp(variable, "quality")) res = s->set_quality(s, val);
     else if(!strcmp(variable, "contrast")) res = s->set_contrast(s, val);
