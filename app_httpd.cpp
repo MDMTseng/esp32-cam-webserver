@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #include <esp_http_server.h>
 #include <esp_timer.h>
 #include <esp_camera.h>
@@ -333,7 +332,16 @@ static esp_err_t capture_handler(httpd_req_t *req){
     
 //    pinMode(LAMP_PIN, OUTPUT);
 //    digitalWrite(LAMP_PIN, HIGH);
+
+    static int64_t startTime = esp_timer_get_time();
+
     fb = esp_camera_fb_get();
+
+
+    static int64_t endTime = esp_timer_get_time();
+    
+    // Serial.printf("CAPTURE: wait:%d  tstamp:%ld.%06lld\n",(endTime-startTime)/1000,fb->timestamp.tv_sec,fb->timestamp.tv_usec);
+    Serial.printf("CAPTURE: tstamp:%d.%d\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec);
 //    delay(1000);
 //    digitalWrite(LAMP_PIN, LOW);
     if (!fb) {
@@ -467,6 +475,7 @@ static esp_err_t stream_handler(httpd_req_t *req){
         detected = false;
         face_id = 0;
         fb = esp_camera_fb_get();
+        Serial.printf("STREAM: tstamp:%d.%d\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec);
         if (!fb) {
             Serial.println("STREAM: failed to acquire frame");
             res = ESP_FAIL;
@@ -540,15 +549,22 @@ static esp_err_t stream_handler(httpd_req_t *req){
                 }
             }
         }
-        if(res == ESP_OK){
-            res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+        if(1)
+        {
+          if(res == ESP_OK){
+              res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+          }
+          if(res == ESP_OK){
+              size_t hlen = snprintf((char *)part_buf, 64, _STREAM_PART, _jpg_buf_len);
+              res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+          }
+          if(res == ESP_OK){
+              res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
+          }
         }
-        if(res == ESP_OK){
-            size_t hlen = snprintf((char *)part_buf, 64, _STREAM_PART, _jpg_buf_len);
-            res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
-        }
-        if(res == ESP_OK){
-            res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
+        else
+        {
+          res = ESP_OK;
         }
         if(fb){
             esp_camera_fb_return(fb);
@@ -574,7 +590,7 @@ static esp_err_t stream_handler(httpd_req_t *req){
         last_frame = fr_end;
         frame_time /= 1000;
         uint32_t avg_frame_time = ra_filter_run(&ra_filter, frame_time);
-        if (debugData) {
+        if (1) {
             if (detection_enabled) {
                 Serial.printf("MJPG: %uB %ums (%.1ffps), AVG: %ums (%.1ffps), %u+%u+%u+%u=%u %s%d\r\n",
                     (uint32_t)(_jpg_buf_len),
