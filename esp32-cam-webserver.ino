@@ -424,7 +424,7 @@ void WifiSetup() {
 void setup() {
     // This might reduce boot loops caused by camera init failures when soft rebooting
     // See, for instance, https://esp32.com/viewtopic.php?t=3152
-    Serial.begin(115200);
+    Serial.begin(921600);
     Serial.setDebugOutput(true);
     Serial.println();
     Serial.println("====");
