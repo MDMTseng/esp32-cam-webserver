@@ -421,10 +421,21 @@ void WifiSetup() {
     }
 }
 
+
+static void IRAM_ATTR test1_task(void *pvParameters)
+{
+  int i=0;
+    while (true) {
+      Serial.printf("test1_task run...:%d\n",i++);
+      vTaskDelay(1000);
+    }
+}
+
+
 void setup() {
     // This might reduce boot loops caused by camera init failures when soft rebooting
     // See, for instance, https://esp32.com/viewtopic.php?t=3152
-    Serial.begin(115200);
+    Serial.begin(921600);
     Serial.setDebugOutput(true);
     Serial.println();
     Serial.println("====");
@@ -480,6 +491,12 @@ void setup() {
         config.jpeg_quality = 12;
         config.fb_count = 1;
     }
+
+
+    config.pixel_format = PIXFORMAT_RGB888;
+    config.frame_size = FRAMESIZE_CIF;
+    config.fb_count = 1;
+
 
     #if defined(CAMERA_MODEL_ESP_EYE)
         pinMode(13, INPUT_PULLUP);
@@ -650,6 +667,9 @@ void setup() {
 
     // As a final init step chomp out the serial buffer in case we have recieved mis-keys or garbage during startup
     while (Serial.available()) Serial.read();
+
+    // Handle_t test1_task_h=NULL;
+    // xTaskTaskCreatePinnedToCore(&test1_task, "test1_task", 4096, NULL, 10, &test1_task_h, 0);
 }
 
 void loop() {

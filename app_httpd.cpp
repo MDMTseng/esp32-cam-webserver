@@ -27,6 +27,8 @@
 #include "src/favicons.h"
 #include "src/logo.h"
 #include "storage.h"
+xTaskHandle  timerTest = NULL;
+
 
 // Functions from the main .ino
 extern void flashLED(int flashtime);
@@ -64,6 +66,10 @@ extern String sketchMD5;
 extern char knownFaceText[];
 extern char unknownFaceText[];
 
+
+int target_width=800;
+int target_height=600;
+int pixBCount=3;
 
 #include "fb_gfx.h"
 #include "fd_forward.h"
@@ -319,6 +325,90 @@ static size_t jpg_encode_stream(void * arg, size_t index, const void* data, size
     return len;
 }
 
+
+void showImageData(camera_fb_t* fb)
+{
+  if(!fb)return;
+
+
+  Serial.printf("CAPTURE: tstamp:%d.%d\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec);
+
+  Serial.printf("FrameSize(%d):%dX%d   %dKB\n",fb->format,target_width,target_height,fb->len/1024);
+  // for(int i=0;i<fb->width*4;i+=32)
+  // {
+  //   Serial.printf(" %02x",fb->buf[i]);
+  // }
+  int lineSkip=target_width*pixBCount;
+  if(0)
+  {
+    int i=0;
+    for(int j=0;j<target_width;j++)
+    {
+      if((j&(0xF))==0)
+      {
+        Serial.println();
+      }
+      for(int k=0;k<pixBCount;k++)
+      {
+        Serial.printf("%x",fb->buf[i*lineSkip+j*pixBCount+k]>>8);
+      }
+      Serial.printf(" ");
+      
+    }
+    Serial.println();
+
+    i=1;
+    for(int j=0;j<target_width;j++)
+    {
+      if((j&(0xF))==0)
+      {
+        Serial.println();
+      }
+      for(int k=0;k<pixBCount;k++)
+      {
+        Serial.printf("%x",fb->buf[i*lineSkip+j*pixBCount+k]>>8);
+      }
+      Serial.printf(" ");
+    }
+
+
+    i=target_height-1;
+    for(int j=0;j<target_width;j++)
+    {
+      if((j&(0xF))==0)
+      {
+        Serial.println();
+      }
+      for(int k=0;k<pixBCount;k++)
+      {
+        Serial.printf("%x",fb->buf[i*lineSkip+j*pixBCount+k]>>8);
+      }
+      Serial.printf(" ");
+    }
+    Serial.println();
+  }
+  Serial.println();
+  Serial.println();
+  int pixSkip=10;
+  for(int i=0;i<target_height;i+=pixSkip)
+  {
+    for(int j=0;j<target_width;j+=pixSkip)
+    {
+
+      for(int k=0;k<pixBCount;k++)
+      {
+        Serial.printf("%x",fb->buf[i*lineSkip+j*pixBCount+k]>>4);
+      }
+      Serial.printf(" ");
+
+      // Serial.printf(" %02x%02x%02x",fb->buf[i*lineSkip+j*pixBCount],fb->buf[i*lineSkip+j*pixBCount+1],fb->buf[i*lineSkip+j*pixBCount+2]);
+      
+    }
+    Serial.println();
+  }
+}
+
+
 static esp_err_t capture_handler(httpd_req_t *req){
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
@@ -341,7 +431,6 @@ static esp_err_t capture_handler(httpd_req_t *req){
     static int64_t endTime = esp_timer_get_time();
     
     // Serial.printf("CAPTURE: wait:%d  tstamp:%ld.%06lld\n",(endTime-startTime)/1000,fb->timestamp.tv_sec,fb->timestamp.tv_usec);
-    Serial.printf("CAPTURE: tstamp:%d.%d\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec);
 //    delay(1000);
 //    digitalWrite(LAMP_PIN, LOW);
     if (!fb) {
@@ -350,7 +439,6 @@ static esp_err_t capture_handler(httpd_req_t *req){
         if (autoLamp && (lampVal != -1)) setLamp(0);
         return ESP_FAIL;
     }
-
     httpd_resp_set_type(req, "image/jpeg");
     httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
@@ -366,10 +454,19 @@ static esp_err_t capture_handler(httpd_req_t *req){
             fb_len = fb->len;
             res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
         } else {
-            jpg_chunking_t jchunk = {req, 0};
-            res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk)?ESP_OK:ESP_FAIL;
-            httpd_resp_send_chunk(req, NULL, 0);
-            fb_len = jchunk.len;
+            // jpg_chunking_t jchunk = {req, 0};
+            // res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk)?ESP_OK:ESP_FAIL;
+            // httpd_resp_send_chunk(req, NULL, 0);
+            // fb_len = jchunk.len;
+
+            showImageData(fb);
+
+                  
+            esp_camera_fb_return(fb);
+            fb = NULL;
+            return ESP_OK;
+
+
         }
         esp_camera_fb_return(fb);
         int64_t fr_end = esp_timer_get_time();
@@ -470,12 +567,11 @@ static esp_err_t stream_handler(httpd_req_t *req){
     }
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-
+    char myASCII[] = "  .,:ilwW#";
     while(true){
         detected = false;
         face_id = 0;
         fb = esp_camera_fb_get();
-        Serial.printf("STREAM: tstamp:%d.%d\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec);
         if (!fb) {
             Serial.println("STREAM: failed to acquire frame");
             res = ESP_FAIL;
@@ -488,6 +584,13 @@ static esp_err_t stream_handler(httpd_req_t *req){
 
             if(!detection_enabled || fb->width > 400){
                 if(fb->format != PIXFORMAT_JPEG){
+                    showImageData(fb);
+
+                    esp_camera_fb_return(fb);
+                    fb = NULL;
+                    continue;
+
+
                     bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
                     esp_camera_fb_return(fb);
                     fb = NULL;
@@ -496,6 +599,8 @@ static esp_err_t stream_handler(httpd_req_t *req){
                         res = ESP_FAIL;
                     }
                 } else {
+
+
                     _jpg_buf_len = fb->len;
                     _jpg_buf = fb->buf;
 
@@ -549,7 +654,7 @@ static esp_err_t stream_handler(httpd_req_t *req){
                 }
             }
         }
-        if(1)
+        if(0)
         {
           if(res == ESP_OK){
               res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
@@ -653,7 +758,6 @@ static int parseStringNumArr2Int32Arr(char *str, uint32_t *int_arr,size_t int_ar
   return intL;
 }
 
-
 static esp_err_t cmd_handler(httpd_req_t *req){
     char*  buf;
     size_t buf_len;
@@ -691,7 +795,7 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     sensor_t * s = esp_camera_sensor_get();
     int res = 0;
     if(!strcmp(variable, "framesize")) {
-        if(s->pixformat == PIXFORMAT_JPEG)
+        // if(s->pixformat == PIXFORMAT_JPEG)
         {
 
           res = s->set_framesize(s, (framesize_t)val);
@@ -701,7 +805,7 @@ static esp_err_t cmd_handler(httpd_req_t *req){
     }
 
     else if(!strcmp(variable, "ResN_Info")) {
-        if(s->pixformat == PIXFORMAT_JPEG)
+        
         {
           // res = s->set_framesize(s, (framesize_t)val);
 
@@ -733,9 +837,20 @@ static esp_err_t cmd_handler(httpd_req_t *req){
             int w=int32arr[5];
             int h=int32arr[6];
 
+            target_width =w;
+            target_height=h;
             
             res = s->set_res_raw(s, mode, 0, 0, 0,   offset_x, offset_y, max_x, max_y, w, h, false, true);
 
+            // WRITE_REG_OR_RETURN(BANK_SENSOR, CLKRC, c.clk);
+            res = s->set_reg(s,1, 0x11, 0);
+            // WRITE_REG_OR_RETURN(BANK_DSP, R_DVP_SP, c.pclk);
+            res = s->set_reg(s,0, 0xd3, 1);
+            res = s->set_reg(s,0, 0x5, 0);
+            res = s->set_reg(s,0, 0xE0, 0);
+            
+            // set_pixformat(sensor, sensor->pixformat);
+// ret = write_reg(sensor, bank, reg, val);
           }
         }
     }
