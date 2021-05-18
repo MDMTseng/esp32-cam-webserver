@@ -499,7 +499,7 @@ static esp_err_t stream_handler(httpd_req_t *req){
                     _jpg_buf_len = fb->len;
                     _jpg_buf = fb->buf;
 
-                    image_matrix = dl_matrix3du_alloc(1, 800, 16, 3);
+                    image_matrix = dl_matrix3du_alloc(1, 400, 64, 3);
                     fmt2rgb888(fb->buf, fb->len, fb->format, image_matrix->item);
                     dl_matrix3du_free(image_matrix);
                 }
