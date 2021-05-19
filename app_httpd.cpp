@@ -108,6 +108,14 @@ static int8_t is_enrolling = 0;
 static face_id_list id_list = {0};
 int id_list_alloc = 0;
 
+
+int process_Buffer_W=400;
+int process_Buffer_H=64;
+
+dl_matrix3du_t *background_Buffer=NULL;
+dl_matrix3du_t *frameDecode_Buffer=NULL;
+dl_matrix3du_t *Int_Buffer=NULL;
+
 static ra_filter_t * ra_filter_init(ra_filter_t * filter, size_t sample_size){
     memset(filter, 0, sizeof(ra_filter_t));
 
@@ -434,6 +442,217 @@ static esp_err_t capture_handler(httpd_req_t *req){
     return res;
 }
 
+
+#define BYTE3_to_BYTE3(dst,src) {(dst)[2]=(src)[2]; (dst)[1]=(src)[1]; (dst)[0]=(src)[0]; }
+#define BYTE3_to_INT(ptr) (((ptr)[0]<<16)|((ptr)[1]<<8)|((ptr)[2]))
+#define INT_to_BYTE3(ptr,int_val) {(ptr)[2]=(int_val)&0xFF;(ptr)[1]=((int_val)>>8)&0xFF;(ptr)[2]=((int_val)>>16)&0xFF; }
+
+void IntegralImage(dl_matrix3du_t* dest_int_img,dl_matrix3du_t* img)
+{
+  if(dest_int_img->c!=4 ||img->c!=3 )return;
+
+  uint32_t originVal=img->item[0];
+
+  {
+    uint32_t* dstPix=(uint32_t*)(dest_int_img->item);
+    *dstPix=originVal;
+  }
+
+  {//first x
+
+    uint32_t Tmp_Val=originVal;
+    int offset = 3;
+    uint8_t* srcPix=img->item+offset;
+    uint32_t* dstPix=(uint32_t*)(dest_int_img->item);
+    for(int j=1;j<img->w;j++)
+    {
+      Tmp_Val+=*srcPix;
+      *dstPix=Tmp_Val;
+      srcPix+=offset;
+      dstPix++;
+    }
+  }
+  
+
+  {//first y
+
+    uint32_t Tmp_Val=originVal;
+    int offset = 3*img->w;
+    uint8_t* srcPix=img->item;
+    uint32_t* dstPix=(uint32_t*)(dest_int_img->item);
+    for(int j=1;j<img->h;j++)
+    {
+      srcPix+=offset;
+      dstPix+=img->w;
+
+      Tmp_Val+=*srcPix;
+      *dstPix=Tmp_Val;
+    }
+  }
+
+  for(int i=1;i<img->h;i++)
+  {
+    int wJump=img->w*i;
+    uint8_t*  S11=img->item+(3*(1+wJump));
+    uint32_t* D10=(uint32_t*)(dest_int_img->item)+wJump;
+    uint32_t* D00=(D10-img->w);
+    for(int j=1;j<img->w;j++)
+    {
+      uint32_t *D11=D10+1;
+      uint32_t *D01=D00+1;
+
+      *D11= ((uint32_t)*S11) + (*D10) + (*D01) - (*D00);
+
+      S11+=3;
+      D10+=1;
+      D00+=1;
+    }
+  }
+}
+
+
+inline uint32_t fetchIntImgBlockSum(dl_matrix3du_t* imt_Img,uint32_t X,uint32_t Y,uint32_t W,uint32_t H)
+{
+  int ibW=Int_Buffer->w;
+  int ibH=Int_Buffer->h;
+  // if(X>=ibW || Y>=ibH || X+W>=ibW||Y+H>=ibH)break;
+
+
+  uint32_t* intPix=(uint32_t*)Int_Buffer->item;
+
+  uint32_t* LTPix=&intPix[ibW*Y+X];
+  uint32_t D00=LTPix[0];
+  uint32_t D01=LTPix[W];
+
+  uint32_t* LBPix=LTPix+ibW*H;
+  uint32_t D10=LBPix[0];
+  uint32_t D11=LBPix[W];
+
+
+  return D11-D10+D00-D01;
+}
+
+int Int_Img_Matching(dl_matrix3du_t* imt_Img)
+{
+  
+    // uint8_t* decPix=&Int_Buffer->item[0];
+  int pixSkip=1;
+  
+  int MatchingWindowX=30;
+  int MatchingRangeX=imt_Img->w-MatchingWindowX;
+
+  uint32_t XXX=0;
+  for(int j=0;j<MatchingRangeX;j+=pixSkip)
+  {
+    
+    for(int k=0;k<100;k++)
+    {
+      XXX+=fetchIntImgBlockSum(imt_Img,j,0,MatchingWindowX-3,imt_Img->h-3);
+    }
+  }
+  return XXX;
+}
+
+
+void showImageData(camera_fb_t* fb,dl_matrix3du_t* decbuf)
+{
+  if(!fb)return;
+  
+  fmt2rgb888(fb->buf, fb->len, fb->format, decbuf->item);
+
+  IntegralImage(Int_Buffer,decbuf);
+  auto startT = esp_timer_get_time();
+
+  if(0){
+
+    uint8_t* decPix=&decbuf->item[0];
+    uint8_t* bkPix=&background_Buffer->item[0];
+    for(int i=0;i<decbuf->h;i++)
+    {
+      for(int j=0;j<decbuf->w;j++)
+      {
+        *decPix-=*bkPix;
+        decPix++;bkPix++;
+
+        *decPix-=*bkPix;
+        decPix++;bkPix++;
+
+        *decPix-=*bkPix;
+        decPix++;bkPix++;
+      }
+    }
+  }
+
+  
+  //integral image
+  {
+
+    {
+      volatile uint32_t retxxxxx=Int_Img_Matching(Int_Buffer);
+      Serial.printf("%d ",retxxxxx);
+    }
+    Serial.printf("\n");
+  }
+
+
+
+  auto endT = esp_timer_get_time();
+
+  Serial.printf("CAPTURE: tstamp:%d.%ds decodeT:%dms\n",fb->timestamp.tv_sec,fb->timestamp.tv_usec,(endT-startT)/1000);
+
+  Serial.printf("FrameSize:%dX%d   %dKB\n",decbuf->w,decbuf->h,fb->len/1024);
+  // for(int i=0;i<fb->width*4;i+=32)
+  // {
+  //   Serial.printf(" %02x",fb->buf[i]);
+  // }
+  if(0)
+  {
+    uint8_t* decPix=decbuf->item;
+    int lineSkip=decbuf->w*decbuf->c;
+    int pixSkip=10;
+    for(int i=0;i<decbuf->h;i+=pixSkip)
+    {
+      for(int j=0;j<decbuf->w;j+=pixSkip)
+      {
+        for(int k=0;k<decbuf->c;k++)
+        {
+          Serial.printf("%x",decPix[i*lineSkip+j*decbuf->c+k]>>4);
+        }
+        Serial.printf(" ");
+      }
+      Serial.println();
+    }
+
+
+    Serial.println();
+  }
+
+  
+  if(1)
+  {  
+    // uint8_t* decPix=&Int_Buffer->item[0];
+    int pixSkip=20;
+    int H=decbuf->h;
+    int W=decbuf->w;
+    for(int i=0;i<H;i+=pixSkip)
+    {
+      uint32_t* intPix=(uint32_t*)Int_Buffer->item;
+      intPix+=i*decbuf->w;
+      for(int j=0;j<W;j+=pixSkip)
+      {
+        Serial.printf(" %03X",(*intPix)>>8);
+        intPix+=pixSkip;
+      }
+      Serial.println();
+    }
+    Serial.println();
+  }
+
+}
+
+
+
+
 static esp_err_t stream_handler(httpd_req_t *req){
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
@@ -498,10 +717,9 @@ static esp_err_t stream_handler(httpd_req_t *req){
                 } else {
                     _jpg_buf_len = fb->len;
                     _jpg_buf = fb->buf;
-
-                    image_matrix = dl_matrix3du_alloc(1, 400, 64, 3);
-                    fmt2rgb888(fb->buf, fb->len, fb->format, image_matrix->item);
-                    dl_matrix3du_free(image_matrix);
+                    
+                    showImageData(fb,frameDecode_Buffer);
+                    
                 }
             } else {
 
@@ -1197,7 +1415,10 @@ void startCameraServer(int hPort, int sPort){
 
     // Filter list; used during face detection
     ra_filter_init(&ra_filter, 20);
-
+    frameDecode_Buffer = dl_matrix3du_alloc(1, process_Buffer_W, process_Buffer_H, 3);
+    background_Buffer = dl_matrix3du_alloc(1, process_Buffer_W, process_Buffer_H, 3);
+    Int_Buffer = dl_matrix3du_alloc(1, process_Buffer_W, process_Buffer_H, 4);
+    
     // Mtmn config values (face detection and recognition parameters)
     mtmn_config.type = FAST;
     mtmn_config.min_face = 80;
